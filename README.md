@@ -32,18 +32,29 @@ All resources are tagged with BackupDemo=true to demonstrate tag-based backup se
    cd awsbackup
    ```
 
-2. Deploy the CloudFormation stack:
+2. Upload the nested templates to an S3 bucket:
+   
+   ```bash
+   # Create an S3 bucket (replace BUCKET_NAME with your unique bucket name)
+   aws s3 mb s3://BUCKET_NAME
+   
+   # Upload the CloudFormation templates
+   aws s3 cp cloudformation/ s3://BUCKET_NAME/cloudformation/ --recursive
+   ```
+
+3. Deploy the CloudFormation stack:
    
    ```bash
    aws cloudformation create-stack \
      --stack-name aws-backup-demo \
      --template-body file://cloudformation/main.yaml \
      --parameters \
+     ParameterKey=TemplateBucketName,ParameterValue=BUCKET_NAME \
      ParameterKey=DelegatedAdminAccountId,ParameterValue=ACCOUNT_ID \
      --capabilities CAPABILITY_IAM
    ```
 
-3. Monitor the deployment:
+4. Monitor the deployment:
    ```bash
    aws cloudformation describe-stacks --stack-name aws-backup-demo
    ```

@@ -17,6 +17,10 @@ Parameters:
     Description: AWS Account ID for Backup delegated administrator (leave blank if same account)
     Type: String
     Default: ""
+    
+  TemplateBucketName:
+    Description: S3 bucket name containing nested CloudFormation templates
+    Type: String
 
 Resources:
   GeneratedDBPassword:
@@ -32,14 +36,14 @@ Resources:
   VPCStack:
     Type: AWS::CloudFormation::Stack
     Properties:
-      TemplateURL: https://github.com/santdilp/awsbackup/raw/main/cloudformation/vpc.yaml
+      TemplateURL: !Sub https://s3.amazonaws.com/${TemplateBucketName}/cloudformation/vpc.yaml
       Parameters:
         EnvironmentName: !Ref EnvironmentName
 
   StorageStack:
     Type: AWS::CloudFormation::Stack
     Properties:
-      TemplateURL: https://github.com/santdilp/awsbackup/raw/main/cloudformation/storage.yaml
+      TemplateURL: !Sub https://s3.amazonaws.com/${TemplateBucketName}/cloudformation/storage.yaml
       Parameters:
         EnvironmentName: !Ref EnvironmentName
 
@@ -47,7 +51,7 @@ Resources:
     Type: AWS::CloudFormation::Stack
     DependsOn: VPCStack
     Properties:
-      TemplateURL: https://github.com/santdilp/awsbackup/raw/main/cloudformation/database.yaml
+      TemplateURL: !Sub https://s3.amazonaws.com/${TemplateBucketName}/cloudformation/database.yaml
       Parameters:
         EnvironmentName: !Ref EnvironmentName
         DBPassword: !Join ['', ['{{resolve:secretsmanager:', !Ref GeneratedDBPassword, ':SecretString:password}}' ]]
@@ -58,7 +62,7 @@ Resources:
   BackupStack:
     Type: AWS::CloudFormation::Stack
     Properties:
-      TemplateURL: https://github.com/santdilp/awsbackup/raw/main/cloudformation/backup.yaml
+      TemplateURL: !Sub https://s3.amazonaws.com/${TemplateBucketName}/cloudformation/backup.yaml
       Parameters:
         EnvironmentName: !Ref EnvironmentName
         DelegatedAdminAccountId: !Ref DelegatedAdminAccountId
@@ -67,7 +71,7 @@ Resources:
     Type: AWS::CloudFormation::Stack
     DependsOn: [VPCStack, StorageStack, DatabaseStack]
     Properties:
-      TemplateURL: https://github.com/santdilp/awsbackup/raw/main/cloudformation/compute.yaml
+      TemplateURL: !Sub https://s3.amazonaws.com/${TemplateBucketName}/cloudformation/compute.yaml
       Parameters:
         EnvironmentName: !Ref EnvironmentName
         EnableSSMAccess: !Ref EnableSSMAccess
