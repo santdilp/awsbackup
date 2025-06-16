@@ -39,8 +39,6 @@ bash
      --stack-name aws-backup-demo \
      --template-body file://cloudformation/main.yaml \
      --parameters \
-       ParameterKey=KeyPairName,ParameterValue=YOUR_KEY_PAIR \
-       ParameterKey=DBPassword,ParameterValue=YOUR_SECURE_PASSWORD \
        ParameterKey=DelegatedAdminAccountId,ParameterValue=ACCOUNT_ID \
      --capabilities CAPABILITY_IAM
    
