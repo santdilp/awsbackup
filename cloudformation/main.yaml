@@ -1,0 +1,98 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'AWS Backup Demo - Main Template'
+
+Parameters:
+  EnvironmentName:
+    Description: Environment name prefix for resources
+    Type: String
+    Default: BackupDemo
+  
+  KeyPairName:
+    Description: EC2 Key Pair for SSH access
+    Type: AWS::EC2::KeyPair::KeyName
+    
+  DBPassword:
+    Description: RDS database password
+    Type: String
+    NoEcho: true
+    MinLength: 8
+    
+  DelegatedAdminAccountId:
+    Description: AWS Account ID for Backup delegated administrator (leave blank if same account)
+    Type: String
+    Default: ""
+
+Resources:
+  VPCStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: https://github.com/santdilp/awsbackup/raw/main/cloudformation/vpc.yaml
+      Parameters:
+        EnvironmentName: !Ref EnvironmentName
+
+  StorageStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: https://github.com/santdilp/awsbackup/raw/main/cloudformation/storage.yaml
+      Parameters:
+        EnvironmentName: !Ref EnvironmentName
+
+  DatabaseStack:
+    Type: AWS::CloudFormation::Stack
+    DependsOn: VPCStack
+    Properties:
+      TemplateURL: https://github.com/santdilp/awsbackup/raw/main/cloudformation/database.yaml
+      Parameters:
+        EnvironmentName: !Ref EnvironmentName
+        DBPassword: !Ref DBPassword
+        VpcId: !GetAtt VPCStack.Outputs.VpcId
+        PrivateSubnet1Id: !GetAtt VPCStack.Outputs.PrivateSubnet1Id
+        PrivateSubnet2Id: !GetAtt VPCStack.Outputs.PrivateSubnet2Id
+
+  BackupStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: https://github.com/santdilp/awsbackup/raw/main/cloudformation/backup.yaml
+      Parameters:
+        EnvironmentName: !Ref EnvironmentName
+        DelegatedAdminAccountId: !Ref DelegatedAdminAccountId
+
+  ComputeStack:
+    Type: AWS::CloudFormation::Stack
+    DependsOn: [VPCStack, StorageStack, DatabaseStack]
+    Properties:
+      TemplateURL: https://github.com/santdilp/awsbackup/raw/main/cloudformation/compute.yaml
+      Parameters:
+        EnvironmentName: !Ref EnvironmentName
+        KeyPairName: !Ref KeyPairName
+        VpcId: !GetAtt VPCStack.Outputs.VpcId
+        PublicSubnetId: !GetAtt VPCStack.Outputs.PublicSubnet1Id
+        S3BucketName: !GetAtt StorageStack.Outputs.S3BucketName
+        DynamoDBTableName: !GetAtt StorageStack.Outputs.DynamoDBTableName
+        RDSEndpoint: !GetAtt DatabaseStack.Outputs.RDSEndpoint
+        DBPassword: !Ref DBPassword
+
+Outputs:
+  VpcId:
+    Description: VPC ID
+    Value: !GetAtt VPCStack.Outputs.VpcId
+
+  EC2PublicIP:
+    Description: EC2 Public IP
+    Value: !GetAtt ComputeStack.Outputs.EC2PublicIP
+
+  RDSEndpoint:
+    Description: RDS Endpoint
+    Value: !GetAtt DatabaseStack.Outputs.RDSEndpoint
+
+  S3BucketName:
+    Description: S3 Bucket Name
+    Value: !GetAtt StorageStack.Outputs.S3BucketName
+
+  DynamoDBTableName:
+    Description: DynamoDB Table Name
+    Value: !GetAtt StorageStack.Outputs.DynamoDBTableName
+
+  BackupVaultName:
+    Description: AWS Backup Vault Name
+    Value: !GetAtt BackupStack.Outputs.BackupVaultName

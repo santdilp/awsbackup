@@ -1,0 +1,189 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'AWS Backup Demo - AWS Backup Resources with Delegated Admin'
+
+Parameters:
+  EnvironmentName:
+    Description: Environment name prefix for resources
+    Type: String
+    
+  DelegatedAdminAccountId:
+    Description: AWS Account ID for Backup delegated administrator (leave blank if same account)
+    Type: String
+    Default: ""
+
+Conditions:
+  HasDelegatedAdmin: !Not [!Equals [!Ref DelegatedAdminAccountId, ""]]
+
+Resources:
+  BackupRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: backup.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSBackupServiceRolePolicyForBackup
+        - arn:aws:iam::aws:policy/service-role/AWSBackupServiceRolePolicyForRestores
+      Tags:
+        - Key: BackupDemo
+          Value: true
+
+  BackupVault:
+    Type: AWS::Backup::BackupVault
+    Properties:
+      BackupVaultName: !Sub ${EnvironmentName}-BackupVault
+      Tags:
+        BackupDemo: true
+
+  BackupPlan:
+    Type: AWS::Backup::BackupPlan
+    Properties:
+      BackupPlan:
+        BackupPlanName: !Sub ${EnvironmentName}-BackupPlan
+        BackupPlanRule:
+          - RuleName: DailyBackups
+            TargetBackupVault: !Ref BackupVault
+            ScheduleExpression: cron(0 5 * * ? *)  # Daily at 5:00 AM UTC
+            StartWindowMinutes: 60
+            CompletionWindowMinutes: 180
+            Lifecycle:
+              DeleteAfterDays: 30
+          - RuleName: WeeklyBackups
+            TargetBackupVault: !Ref BackupVault
+            ScheduleExpression: cron(0 5 ? * 1 *)  # Weekly on Sundays at 5:00 AM UTC
+            StartWindowMinutes: 60
+            CompletionWindowMinutes: 180
+            Lifecycle:
+              DeleteAfterDays: 90
+              MoveToColdStorageAfterDays: 30
+            CopyActions:
+              - DestinationBackupVaultArn: !Sub arn:aws:backup:${AWS::Region}:${AWS::AccountId}:backup-vault:${EnvironmentName}-BackupVault
+                Lifecycle:
+                  DeleteAfterDays: 120
+                  MoveToColdStorageAfterDays: 30
+      Tags:
+        BackupDemo: true
+
+  BackupSelection:
+    Type: AWS::Backup::BackupSelection
+    Properties:
+      BackupPlanId: !Ref BackupPlan
+      BackupSelection:
+        SelectionName: !Sub ${EnvironmentName}-TagBasedSelection
+        IamRoleArn: !GetAtt BackupRole.Arn
+        ListOfTags:
+          - ConditionType: STRINGEQUALS
+            ConditionKey: BackupDemo
+            ConditionValue: true
+
+  # Custom resource to validate delegated admin if specified
+  ValidateDelegatedAdmin:
+    Type: Custom::ValidateDelegatedAdmin
+    Condition: HasDelegatedAdmin
+    Properties:
+      ServiceToken: !GetAtt ValidateDelegatedAdminFunction.Arn
+      DelegatedAdminAccountId: !Ref DelegatedAdminAccountId
+
+  ValidateDelegatedAdminFunction:
+    Type: AWS::Lambda::Function
+    Condition: HasDelegatedAdmin
+    Properties:
+      Handler: index.handler
+      Role: !GetAtt ValidateDelegatedAdminRole.Arn
+      Runtime: python3.9
+      Timeout: 30
+      Code:
+        ZipFile: |
+          import boto3
+          import cfnresponse
+          import logging
+
+          logger = logging.getLogger()
+          logger.setLevel(logging.INFO)
+
+          def handler(event, context):
+              logger.info('Received event: %s', event)
+              
+              # Initialize response
+              response_data = {}
+              
+              try:
+                  if event['RequestType'] == 'Create' or event['RequestType'] == 'Update':
+                      delegated_admin_id = event['ResourceProperties']['DelegatedAdminAccountId']
+                      
+                      # Check if the account is registered as delegated admin
+                      organizations = boto3.client('organizations')
+                      backup = boto3.client('backup')
+                      
+                      try:
+                          # Check if account is delegated admin for AWS Backup
+                          response = organizations.list_delegated_administrators(ServicePrincipal='backup.amazonaws.com')
+                          
+                          is_delegated_admin = False
+                          for admin in response.get('DelegatedAdministrators', []):
+                              if admin['Id'] == delegated_admin_id:
+                                  is_delegated_admin = True
+                                  break
+                          
+                          if not is_delegated_admin:
+                              logger.warning(f"Account {delegated_admin_id} is not registered as a delegated administrator for AWS Backup")
+                              response_data['Message'] = f"Warning: Account {delegated_admin_id} is not registered as a delegated administrator for AWS Backup"
+                          else:
+                              logger.info(f"Account {delegated_admin_id} is confirmed as a delegated administrator for AWS Backup")
+                              response_data['Message'] = f"Account {delegated_admin_id} is confirmed as a delegated administrator for AWS Backup"
+                              
+                      except Exception as e:
+                          logger.warning(f"Could not verify delegated admin status: {str(e)}")
+                          response_data['Message'] = f"Warning: Could not verify delegated admin status: {str(e)}"
+                  
+                  cfnresponse.send(event, context, cfnresponse.SUCCESS, response_data)
+                  
+              except Exception as e:
+                  logger.error(f"Error: {str(e)}")
+                  cfnresponse.send(event, context, cfnresponse.FAILED, {"Error": str(e)})
+
+  ValidateDelegatedAdminRole:
+    Type: AWS::IAM::Role
+    Condition: HasDelegatedAdmin
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: OrganizationsAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - organizations:ListDelegatedAdministrators
+                  - organizations:DescribeAccount
+                Resource: '*'
+
+Outputs:
+  BackupVaultName:
+    Description: AWS Backup Vault Name
+    Value: !Ref BackupVault
+    Export:
+      Name: !Sub ${EnvironmentName}-BackupVaultName
+
+  BackupPlanId:
+    Description: AWS Backup Plan ID
+    Value: !Ref BackupPlan
+    Export:
+      Name: !Sub ${EnvironmentName}-BackupPlanId
+      
+  DelegatedAdminValidation:
+    Condition: HasDelegatedAdmin
+    Description: Delegated Admin Validation Result
+    Value: !GetAtt ValidateDelegatedAdmin.Message

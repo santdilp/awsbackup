@@ -1,0 +1,137 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'AWS Backup Demo - Compute Resources (EC2)'
+
+Parameters:
+  EnvironmentName:
+    Description: Environment name prefix for resources
+    Type: String
+    
+  KeyPairName:
+    Description: EC2 Key Pair for SSH access
+    Type: AWS::EC2::KeyPair::KeyName
+    
+  VpcId:
+    Description: VPC ID
+    Type: String
+    
+  PublicSubnetId:
+    Description: Public Subnet ID
+    Type: String
+    
+  S3BucketName:
+    Description: S3 Bucket Name
+    Type: String
+    
+  DynamoDBTableName:
+    Description: DynamoDB Table Name
+    Type: String
+    
+  RDSEndpoint:
+    Description: RDS Endpoint
+    Type: String
+    
+  DBPassword:
+    Description: RDS database password
+    Type: String
+    NoEcho: true
+
+Resources:
+  EC2SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for EC2 instance
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-EC2-SG
+        - Key: BackupDemo
+          Value: true
+
+  EC2InstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonS3FullAccess
+        - arn:aws:iam::aws:policy/AmazonDynamoDBFullAccess
+        - arn:aws:iam::aws:policy/AmazonRDSFullAccess
+      Tags:
+        - Key: BackupDemo
+          Value: true
+
+  EC2InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+        - !Ref EC2InstanceRole
+
+  EC2Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: t3.micro
+      ImageId: ami-0c55b159cbfafe1f0  # Amazon Linux 2 AMI (adjust for your region)
+      KeyName: !Ref KeyPairName
+      SubnetId: !Ref PublicSubnetId
+      SecurityGroupIds:
+        - !Ref EC2SecurityGroup
+      IamInstanceProfile: !Ref EC2InstanceProfile
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash -xe
+          
+          # Create demo directory
+          mkdir -p /home/ec2-user/aws-backup-demo
+          cd /home/ec2-user/aws-backup-demo
+          
+          # Download scripts from GitHub
+          wget https://github.com/santdilp/awsbackup/archive/refs/heads/main.zip
+          unzip main.zip
+          mv awsbackup-main/* .
+          rm -rf awsbackup-main main.zip
+          
+          # Make scripts executable
+          chmod +x scripts/*.sh
+          
+          # Run setup scripts
+          ./scripts/setup_environment.sh
+          ./scripts/install_dependencies.sh
+          
+          # Set environment variables for scripts
+          export S3_BUCKET_NAME="${S3BucketName}"
+          export DYNAMODB_TABLE_NAME="${DynamoDBTableName}"
+          export RDS_ENDPOINT="${RDSEndpoint}"
+          export RDS_PASSWORD="${DBPassword}"
+          
+          # Run Python scripts
+          python3 scripts/setup_database.py
+          python3 scripts/generate_documents.py
+          
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-EC2
+        - Key: BackupDemo
+          Value: true
+
+Outputs:
+  EC2InstanceId:
+    Description: EC2 Instance ID
+    Value: !Ref EC2Instance
+    Export:
+      Name: !Sub ${EnvironmentName}-EC2InstanceId
+
+  EC2PublicIP:
+    Description: EC2 Public IP
+    Value: !GetAtt EC2Instance.PublicIp
+    Export:
+      Name: !Sub ${EnvironmentName}-EC2PublicIP
