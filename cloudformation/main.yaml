@@ -29,7 +29,6 @@ Resources:
         PasswordLength: 16
         ExcludeCharacters: '"@/\'
 
-Resources:
   VPCStack:
     Type: AWS::CloudFormation::Stack
     Properties:
