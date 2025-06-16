@@ -1,14 +1,20 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Description: 'AWS Backup Demo - Compute Resources (EC2)'
 
+Conditions:
+  EnableSSMAccessCondition: !Equals [!Ref EnableSSMAccess, 'true']
+  EnableSSHCondition: !Equals [!Ref EnableSSMAccess, 'false']
+
 Parameters:
   EnvironmentName:
     Description: Environment name prefix for resources
     Type: String
     
-  KeyPairName:
-    Description: EC2 Key Pair for SSH access
-    Type: AWS::EC2::KeyPair::KeyName
+  EnableSSMAccess:
+    Description: Enable SSM Session Manager access to EC2 instances
+    Type: String
+    Default: true
+    AllowedValues: [true, false]
     
   VpcId:
     Description: VPC ID
@@ -41,11 +47,13 @@ Resources:
     Properties:
       GroupDescription: Security group for EC2 instance
       VpcId: !Ref VpcId
-      SecurityGroupIngress:
-        - IpProtocol: tcp
-          FromPort: 22
-          ToPort: 22
-          CidrIp: 0.0.0.0/0
+      SecurityGroupIngress: !If
+        - EnableSSHCondition
+        - - IpProtocol: tcp
+            FromPort: 22
+            ToPort: 22
+            CidrIp: 0.0.0.0/0
+        - []
       Tags:
         - Key: Name
           Value: !Sub ${EnvironmentName}-EC2-SG
@@ -66,6 +74,8 @@ Resources:
         - arn:aws:iam::aws:policy/AmazonS3FullAccess
         - arn:aws:iam::aws:policy/AmazonDynamoDBFullAccess
         - arn:aws:iam::aws:policy/AmazonRDSFullAccess
+        - arn:aws:iam::aws:policy/SecretsManagerReadWrite
+        - !If [EnableSSMAccessCondition, arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore, !Ref AWS::NoValue]
       Tags:
         - Key: BackupDemo
           Value: true
@@ -81,7 +91,7 @@ Resources:
     Properties:
       InstanceType: t3.micro
       ImageId: ami-0c55b159cbfafe1f0  # Amazon Linux 2 AMI (adjust for your region)
-      KeyName: !Ref KeyPairName
+      KeyName: !If [EnableSSHCondition, !Ref AWS::NoValue, !Ref AWS::NoValue]
       SubnetId: !Ref PublicSubnetId
       SecurityGroupIds:
         - !Ref EC2SecurityGroup

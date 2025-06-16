@@ -7,20 +7,27 @@ Parameters:
     Type: String
     Default: BackupDemo
   
-  KeyPairName:
-    Description: EC2 Key Pair for SSH access
-    Type: AWS::EC2::KeyPair::KeyName
-    
-  DBPassword:
-    Description: RDS database password
+  EnableSSMAccess:
+    Description: Enable SSM Session Manager access to EC2 instances (recommended)
     Type: String
-    NoEcho: true
-    MinLength: 8
+    Default: true
+    AllowedValues: [true, false]
     
   DelegatedAdminAccountId:
     Description: AWS Account ID for Backup delegated administrator (leave blank if same account)
     Type: String
     Default: ""
+
+Resources:
+  GeneratedDBPassword:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Description: !Sub "Auto-generated password for ${EnvironmentName} RDS database"
+      GenerateSecretString:
+        SecretStringTemplate: '{"username": "admin"}'
+        GenerateStringKey: "password"
+        PasswordLength: 16
+        ExcludeCharacters: '"@/\'
 
 Resources:
   VPCStack:
@@ -44,7 +51,7 @@ Resources:
       TemplateURL: https://github.com/santdilp/awsbackup/raw/main/cloudformation/database.yaml
       Parameters:
         EnvironmentName: !Ref EnvironmentName
-        DBPassword: !Ref DBPassword
+        DBPassword: !Join ['', ['{{resolve:secretsmanager:', !Ref GeneratedDBPassword, ':SecretString:password}}' ]]
         VpcId: !GetAtt VPCStack.Outputs.VpcId
         PrivateSubnet1Id: !GetAtt VPCStack.Outputs.PrivateSubnet1Id
         PrivateSubnet2Id: !GetAtt VPCStack.Outputs.PrivateSubnet2Id
@@ -64,13 +71,13 @@ Resources:
       TemplateURL: https://github.com/santdilp/awsbackup/raw/main/cloudformation/compute.yaml
       Parameters:
         EnvironmentName: !Ref EnvironmentName
-        KeyPairName: !Ref KeyPairName
+        EnableSSMAccess: !Ref EnableSSMAccess
         VpcId: !GetAtt VPCStack.Outputs.VpcId
         PublicSubnetId: !GetAtt VPCStack.Outputs.PublicSubnet1Id
         S3BucketName: !GetAtt StorageStack.Outputs.S3BucketName
         DynamoDBTableName: !GetAtt StorageStack.Outputs.DynamoDBTableName
         RDSEndpoint: !GetAtt DatabaseStack.Outputs.RDSEndpoint
-        DBPassword: !Ref DBPassword
+        DBPassword: !Join ['', ['{{resolve:secretsmanager:', !Ref GeneratedDBPassword, ':SecretString:password}}' ]]
 
 Outputs:
   VpcId:
@@ -96,3 +103,7 @@ Outputs:
   BackupVaultName:
     Description: AWS Backup Vault Name
     Value: !GetAtt BackupStack.Outputs.BackupVaultName
+    
+  DBSecretName:
+    Description: Secrets Manager secret containing database credentials
+    Value: !Ref GeneratedDBPassword
