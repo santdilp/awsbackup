@@ -1,6 +1,37 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Description: 'AWS Backup Demo - Compute Resources (EC2)'
 
+Mappings:
+  RegionMap:
+    us-east-1:
+      AMI: ami-0c55b159cbfafe1f0
+    us-east-2:
+      AMI: ami-0ebc8f6f580a04647
+    us-west-1:
+      AMI: ami-0b2ca94b5b49e0132
+    us-west-2:
+      AMI: ami-0a634ae95e11c6f91
+    eu-west-1:
+      AMI: ami-0bb3fad3c0286ebd5
+    eu-west-2:
+      AMI: ami-0a669382ea0feb73a
+    eu-central-1:
+      AMI: ami-0bd39c806c2335b95
+    ap-northeast-1:
+      AMI: ami-0318ecd6d05daa212
+    ap-northeast-2:
+      AMI: ami-0e1e385b0a934254a
+    ap-southeast-1:
+      AMI: ami-0d058fe428540cd89
+    ap-southeast-2:
+      AMI: ami-0567f647e75c7bc05
+    ap-south-1:
+      AMI: ami-0470e33cd681b2476
+    ca-central-1:
+      AMI: ami-0f75c2980c6a5851d
+    sa-east-1:
+      AMI: ami-03c6239555bb12112
+
 Conditions:
   EnableSSMAccessCondition: !Equals [!Ref EnableSSMAccess, 'true']
   EnableSSHCondition: !Equals [!Ref EnableSSMAccess, 'false']
@@ -90,7 +121,7 @@ Resources:
     Type: AWS::EC2::Instance
     Properties:
       InstanceType: t3.micro
-      ImageId: ami-0c55b159cbfafe1f0  # Amazon Linux 2 AMI (adjust for your region)
+      ImageId: !FindInMap [RegionMap, !Ref "AWS::Region", AMI]
       KeyName: !If [EnableSSHCondition, !Ref AWS::NoValue, !Ref AWS::NoValue]
       SubnetId: !Ref PublicSubnetId
       SecurityGroupIds:
