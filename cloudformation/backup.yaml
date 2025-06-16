@@ -36,7 +36,7 @@ Resources:
     Type: AWS::Backup::BackupVault
     Properties:
       BackupVaultName: !Sub ${EnvironmentName}-BackupVault
-      Tags:
+      BackupVaultTags:
         BackupDemo: true
 
   BackupPlan:
@@ -60,7 +60,7 @@ Resources:
             Lifecycle:
               DeleteAfterDays: 90
               MoveToColdStorageAfterDays: 30
-      Tags:
+      BackupPlanTags:
         BackupDemo: true
 
   BackupSelection:
