@@ -60,11 +60,6 @@ Resources:
             Lifecycle:
               DeleteAfterDays: 90
               MoveToColdStorageAfterDays: 30
-            CopyActions:
-              - DestinationBackupVaultArn: !Sub arn:aws:backup:${AWS::Region}:${AWS::AccountId}:backup-vault:${EnvironmentName}-BackupVault
-                Lifecycle:
-                  DeleteAfterDays: 120
-                  MoveToColdStorageAfterDays: 30
       Tags:
         BackupDemo: true
 
